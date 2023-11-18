@@ -73,10 +73,10 @@ class Engine(Frame):
         self.canvas.create_line(x1,y1,x2,y2,fill="#000") # Creates a line
         self.canvas.pack(fill=BOTH, expand=1) # Updates the canvas
 
-    def draw_polygon(self,points): # draws a polygon between points
+    def draw_polygon(self,points,colour): # draws a polygon between points
         print(points)
         
-        colour = self.getRandColour()
+        
         self.canvas.create_polygon(points,fill=colour) # Creates a line
         self.canvas.pack(fill=BOTH, expand=1) # Updates the canvas
 
@@ -138,7 +138,7 @@ class Engine(Frame):
                         polygon_points.append([point.renderpoint[0],point.renderpoint[1]])
 
                 if polygon_points != []:
-                    self.draw_polygon(polygon_points)
+                    self.draw_polygon(polygon_points,plane.colour)
 
         # Centre marker 
         self.draw_point([960,540])
@@ -392,6 +392,7 @@ class Object():
         self.planes = []
         self.__id = id
         self.__type = type
+        
 
         for point in points:
             x = point[0]
@@ -433,6 +434,7 @@ class Plane():
 
         self.points = points
         self.view_points = []
+        self.colour = Engine.getRandColour()
 
 class Line():
     def __init__(self,a,b):
@@ -472,4 +474,5 @@ def main():
 if __name__ == '__main__':
     
     main()
+
 
