@@ -20,3 +20,8 @@ Working on:
 Issues:
 - Splitting faces into triangles to be drawn currently results in the faces not being fully covered
 - This is because the triangulation algorithm does not work as it should - looking into this
+
+  Timeline of Files:
+  - Engine (new clipping): original upload to Github, implemented clipping
+  - Engine (polygons): changed faces to not randomly change colour every frame (was very annoying), added extraction of planes and lines from points given for a cuboid
+  - Engine (Draw Order): CURRENT MOST UPDATED FILE! Fixed clipping algorithm to actually work, experimented with triangulation of faces, streamlined processing of points and removed drawing of lines since they are drawn using polygons anyway
