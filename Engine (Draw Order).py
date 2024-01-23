@@ -2,7 +2,7 @@ from tkinter import Misc, Tk, Canvas, Frame, BOTH
 from random import randint
 from numpy import array, matmul
 import numpy as np
-from math import sin,cos,pi,radians,atan,degrees,tan
+from math import sin,cos,pi,radians,atan,degrees,tan,hypot,atan2
 
 # Algebra
 # ----------------------------------------------------------------------------------
@@ -17,8 +17,6 @@ def add(v1,v2):
 # Engine
 # ---------------------------------------------------------------------------------------
 class Engine(Frame):
-
-    
 
     def __init__(self,tk):
         self.current_polygons = []
@@ -37,7 +35,7 @@ class Engine(Frame):
         self.y_max = 1
         self.x_min = -1
         self.y_min = -1
-
+        self.origin = [0,0]
         
     def initUI(self,tk):
 
@@ -77,7 +75,7 @@ class Engine(Frame):
         #print(points)
         
         
-        self.canvas.create_polygon(points,fill=colour) # Creates a line
+        self.canvas.create_polygon(points,fill=colour,outline='#000') # Creates a line
         self.canvas.pack(fill=BOTH, expand=1) # Updates the canvas
 
     def transforms(self): # Main transformation routine: raw 3d point -> 3d point relative to camera -> 3d point in perspective -> 2d screen point
@@ -106,21 +104,27 @@ class Engine(Frame):
                         screenpoint = self.convert_point(view_point) # Converts to 2d screen point
                         point.renderpoint = screenpoint
 
-                        self.draw_point(screenpoint) # Renders screen point
+                        #self.draw_point(screenpoint) # Renders screen point
 
                     else:
                         point.in_cube = False
                 else:
                     point.behind = True
 
-            # Drawing Lines
+            # Drawing Triangles
             # ----------------------------------------------------------------------------------------------
-            for line in object.lines:
-                if line.a.behind == False and line.b.behind == False:
+            
+            order = self.get_order(object.planes,camera,can_view)
+            
+            for triangle in order:
+                
+                polygon_points = []
                     
+                for line in triangle.lines:
+                    if line.a.behind == False and line.b.behind == False:
+                        
                         a,b,check = self.sutherland_clip(line.a.view_point,line.b.view_point)
                         
-
                         if check == True:
                             
                             line.a.renderpoint = self.convert_point(a)
@@ -128,22 +132,66 @@ class Engine(Frame):
                             line.b.renderpoint = self.convert_point(b)
                             line.b.in_cube = True
                             self.draw_line(line.a.renderpoint,line.b.renderpoint)
-            
-            order = self.get_order(object.planes,camera,can_view)
 
-            for plane in order:
-
-                polygon_points = []
-
-                for point in plane.points:
-                    if point.in_cube == True:
-                        polygon_points.append([point.renderpoint[0],point.renderpoint[1]])
-
+                            polygon_points.append(line.a.renderpoint)
+                            polygon_points.append(line.b.renderpoint)
+                
+                print(triangle.points)
+                
+                polygon_points = [list(t) for t in set(tuple(element) for element in polygon_points)]
                 if polygon_points != []:
-                    self.draw_polygon(polygon_points,plane.colour)
+                    self.origin = polygon_points[0]
 
+                    polygon_points = sorted(polygon_points,key=self.clockwiseangle_and_distance)
+
+
+                    print(polygon_points)
+                    if len(polygon_points) > 3:
+                        
+                        triangles = self.triangulate(polygon_points)
+                        
+                        print("triangles:",triangles)
+                        for tri in triangles:
+                            
+                            self.draw_polygon(list(tri),triangle.plane.colour)
+                            pass
+                    else:
+                        if polygon_points != []:
+                            self.draw_polygon(polygon_points,triangle.plane.colour)
+                            pass    
         # Centre marker 
         self.draw_point([960,540])
+
+    def triangulate(self,poly):
+        t = []
+        for i in range(1,len(poly)-1):
+            t.append([poly[0],poly[i],poly[i+1]])
+        return t
+
+    def clockwiseangle_and_distance(self,point):
+        
+        origin = self.origin
+
+        refvec = [0,1]
+        # Vector between point and the origin: v = p - o
+        vector = [point[0]-origin[0], point[1]-origin[1]]
+        # Length of vector: ||v||
+        lenvector = hypot(vector[0], vector[1])
+        # If length is zero there is no angle
+        if lenvector == 0:
+            return -pi, 0
+        # Normalize vector: v/||v||
+        normalized = [vector[0]/lenvector, vector[1]/lenvector]
+        dotprod  = normalized[0]*refvec[0] + normalized[1]*refvec[1]     # x1*x2 + y1*y2
+        diffprod = refvec[1]*normalized[0] - refvec[0]*normalized[1]     # x1*y2 - y1*x2
+        angle = atan2(diffprod, dotprod)
+        # Negative angles represent counter-clockwise angles so we need to subtract them 
+        # from 2*pi (360 degrees)
+        if angle < 0:
+            return 2*pi+angle, lenvector
+        # I return first the angle because that's the primary sorting criterium
+        # but if two vectors have the same angle then the shorter distance should come first.
+        return angle, lenvector
 
     def sutherland_clip(self,a,b):
         
@@ -159,18 +207,23 @@ class Engine(Frame):
 
         a_out = [0,0]
         b_out = [0,0]
+        
+
+        if codea == self.INSIDE:
+            a_out = [a[0],a[1]]
+        if codeb == self.INSIDE:
+            b_out = [b[0],b[1]]
 
         while True:
 
             # both in rectangle
-            if codea == 0 and codeb == 0:
+            if codea == self.INSIDE and codeb == self.INSIDE:
                 accept = True
-                a_out = [a[0],a[1]]
-                b_out = [b[0],b[1]]
+                                
                 break
             
             # both outside rectangle
-            elif (codea & codeb) != 0:
+            elif (codea & codeb) != self.INSIDE:
                 a_out = [a[0],a[1]]
                 b_out = [b[0],b[1]]
                 break
@@ -181,7 +234,7 @@ class Engine(Frame):
                 x = 1.0
                 y = 1.0
 
-                if codea != 0:
+                if codea != self.INSIDE:
                     code_out = codea
                 else:
                     code_out = codeb
@@ -212,7 +265,9 @@ class Engine(Frame):
                     b_out[0] = x
                     b_out[1] = y
                     codeb = self.get_region(b_out)
-       
+                
+                
+
         return a_out,b_out,accept    
 
     def get_region(self,point):
@@ -229,35 +284,32 @@ class Engine(Frame):
 
     def get_order(self,planes,cam,can):
         
-        
         order = []
         for plane in planes:
+            for triangle in plane.triangles:
             
-            
-            centre = array(plane.centre.coords)
-            point = matmul(cam,centre)
-            can_point = matmul(can,point) 
+                centre = array(triangle.centroid)
+                point = matmul(cam,centre)
+                can_point = matmul(can,point) 
 
-            plane.view_point = np.divide(can_point,can_point[3]*np.ones(4))
+                triangle.view_point = np.divide(can_point,can_point[3]*np.ones(4))
 
-            # Sort planes by z
-            if len(order) == 0:
-                order.append(plane)
-            else:
-                added = False
-                for i in range(0,len(order)):
-                    
-                    if plane.view_point[2] > order[i].view_point[2]:
-                        order.insert(i, plane)
-                        added = True
-                        break
-                if added == False:
-                    order.append(plane)  
-        culled_order = [order[3],order[4],order[5]]
-        print(order)
-        print(culled_order)
-        #print("YOOOOHOOOOO") - just not going to say anything wentzell 
-        return culled_order
+                # Sort planes by z
+                if len(order) == 0:
+                    order.append(triangle)
+                else:
+                    added = False
+                    for i in range(0,len(order)):
+                        print(triangle.view_point)
+                        if triangle.view_point[2] > order[i].view_point[2]:
+                            order.insert(i, triangle)
+                            added = True
+                            break
+                        
+                    if added == False:
+                        order.append(triangle)  
+        
+        return order
         
     def convert_point(self,point): # Converts as perspective point to a 2d screen point to be displayed
         x = point[0] + 1
@@ -484,37 +536,28 @@ class Plane():
         self.view_points = []
         self.colour = Engine.getRandColour()
         self.name = name
-       
-        x_max = 0
-        x_min = 100000
-        y_max = 0
-        y_min = 100000
-        z_max = 0
-        z_min = 100000
+        self.triangles = []
 
-        for point in points:
-            if point.coords[0] > x_max:
-                x_max = point.coords[0]
-            elif point.coords[0] < x_min:
-                x_min = point.coords[0]
-            if point.coords[1] > y_max:
-                y_max = point.coords[1]
-            elif point.coords[1] < y_min:
-                y_min = point.coords[1]
-            if point.coords[2] > z_max:
-                z_max = point.coords[2]
-            elif point.coords[2] < z_min:
-                z_min = point.coords[2]
-
-        centre_x = x_max - ((x_max-x_min)/2)
-        centre_y = y_max - ((y_max-y_min)/2)
-        centre_z = z_max - ((z_max-z_min)/2)
-        
-        self.centre = Point([centre_x,centre_y,centre_z,1])
+        if len(self.points) == 3:
+            self.triangles.append(Triangle(self.points,self))
+        elif len(self.points) == 4:
+            self.triangles.append(Triangle([self.points[0],self.points[1],self.points[2]],self))
+            self.triangles.append(Triangle([self.points[0],self.points[2],self.points[3]],self))
     
     def __repr__(self) -> str:
         return self.name
 
+class Triangle():
+    def __init__(self,points,plane) -> None:
+        self.points = points
+        self.plane = plane
+        self.centroid = [(points[0].coords[0]+points[1].coords[0]+points[2].coords[0])/3,(points[0].coords[1]+points[1].coords[1]+points[2].coords[1])/3,(points[0].coords[2]+points[1].coords[2]+points[2].coords[2])/3,1]
+        self.view_point = [0,0,0,1]
+
+        self.lines = [Line(points[0],points[1]),Line(points[1],points[2]),Line(points[2],points[0])]
+
+    def __repr__(self) -> str:
+        return str(self.view_point[2]) + self.plane.name
 class Line():
     def __init__(self,a,b):
         self.a = a
@@ -540,15 +583,15 @@ def main():
     engine = Engine(root)
     root.geometry("1920x1080") # Initialises window with dimensions 1920 by 1080
 
-    #vertices = [[0,0,1],[1,0,1],[0,0,2],[1,0,2],[0,1,1],[1,1,1],[0,1,2],[1,1,2]]
+    # clockwise order
     vertices = [[-1,-1,-1],[1,-1,-1],[-1,-1,1],[1,-1,1],[-1,1,-1],[1,1,-1],[-1,1,1],[1,1,1]]
 
     engine.new_object("cuboid",vertices,[1,1,1]) # Creates cuboid
 
     
 
-    vertices1 = [[0,0,-1],[-1,0,-1],[0,0,-2],[-1,0,-2],[-0,3,-1],[-1,3,-1],[0,3,-2],[-1,3,-2]]
-    engine.new_object("cuboid",vertices1,[-10,0,-15]) # Creates cuboid
+    #vertices1 = [[0,0,-1],[-1,0,-1],[0,0,-2],[-1,0,-2],[-0,3,-1],[-1,3,-1],[0,3,-2],[-1,3,-2]]
+    #engine.new_object("cuboid",vertices1,[-10,0,-15]) # Creates cuboid
 
     engine.transforms()
 
